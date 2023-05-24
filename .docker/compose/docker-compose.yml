@@ -1,0 +1,110 @@
+version: '3.9'
+
+x-shared-args: &shared-args
+  BUILDKIT_INLINE_CACHE: ${BUILDKIT_INLINE_CACHE?}
+
+x-user-args: &user-args
+  DOCKER_GROUP_ID: ${LOCAL_GROUP_ID?}
+  DOCKER_GROUP_NAME: ${LOCAL_GROUP_NAME?}
+  DOCKER_USER_ID: ${LOCAL_USER_ID?}
+  DOCKER_USER_NAME: ${LOCAL_USER_NAME?}
+
+x-wp-env: &wp-env
+  DOCKER_WORDPRESS_DB_HOST: db
+  DOCKER_WORDPRESS_DB_USER: root
+  DOCKER_WORDPRESS_DB_PASSWORD: root
+  DOCKER_WORDPRESS_DB_NAME: wp_on_docker
+  DOCKER_WORDPRESS_SITE_URL: "https://${SITE_HOST?}"
+  DOCKER_WORDPRESS_SITE_HOST: ${SITE_HOST?}
+  DOCKER_WORDPRESS_DEBUG : ${WP_DEBUG:-1}
+
+networks:
+  network:
+
+volumes:
+  db:
+
+services:
+
+  wp:
+    image: ${DOCKER_REGISTRY?}/${DOCKER_NAMESPACE?}/wp${WP_VERSION?}-php${PHP_VERSION?}
+    build:
+      context: ../images/wp
+      dockerfile: wordpress.dockerfile
+      target: base
+      args:
+        <<: *user-args
+        <<: *shared-args
+        DOCKER_WP_VERSION: ${WP_VERSION?}
+        DOCKER_WP_CLI_VERSION: ${WP_CLI_VERSION?}
+        DOCKER_PHP_VERSION: ${PHP_VERSION?}
+        DOCKER_ALPINE_VERSION: ${ALPINE_VERSION?}
+        DOCKER_WORDPRESS_PATH: ${WP_CONTAINER_WP_PATH?}
+        DOCKER_LOG_DIR: ${LOG_DIR?}
+    environment:
+       <<: *wp-env
+       PHP_IDE_CONFIG: ${PHP_IDE_CONFIG_HTTP?} # This value is used by Xdebug
+       DOCKER_LOG_DIR: ${LOG_DIR?}
+    volumes:
+      - ${ROOT_DIR?}/wp:${WP_CONTAINER_WP_PATH?}
+    networks:
+      - network
+    extra_hosts:
+      - host.docker.internal:host-gateway # We use this in the xdebug config
+    depends_on:
+      db:
+        condition: service_healthy
+
+  nginx:
+    image: ${DOCKER_REGISTRY?}/${DOCKER_NAMESPACE?}/nginx
+    build:
+      context: ../images/nginx
+      dockerfile: nginx.dockerfile
+      target: base
+      args:
+        <<: *user-args
+        <<: *shared-args
+        DOCKER_NGINX_VERSION: ${NGINX_VERSION?}
+        DOCKER_WORDPRESS_PATH: ${WP_CONTAINER_WP_PATH?}
+        DOCKER_WORDPRESS_SITE_HOST: ${SITE_HOST?}
+    depends_on:
+      - wp
+    volumes:
+      - ${ROOT_DIR?}/wp:${WP_CONTAINER_WP_PATH?}:ro
+    networks:
+      network:
+        aliases:
+          - ${SITE_HOST?}
+    ports:
+      # The NGINX container is not running as root
+      # which is why we can't listen on ports below
+      # 1000.
+      - "${NGINX_UNSECURE_PORT?}:80"
+      - "${NGINX_SECURE_PORT?}:443"
+
+  db:
+    image: ${DB_IMAGE?}
+    environment:
+      MYSQL_DATABASE: wp_on_docker
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - ${DOCKER_DIR?}/images/db/imports:/docker-entrypoint-initdb.d
+      - db:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD-SHELL", "mysql wp_on_docker -uroot -proot -e 'SELECT 1;'  || exit 1" ]
+      interval: 0.2s
+      retries: 50
+    networks:
+      - network
+    ports:
+      - "${DB_PORT?}:3306"
+
+  mailhog:
+    image: mailhog/mailhog
+    networks:
+      - network
+    ports:
+      - "${MAILHOG_SMTP_PORT?}:1025"
+      - "${MAILHOG_UI_PORT?}:8025"
+
+

@@ -1,0 +1,5 @@
+/.make/.mk.env
+/.docker/.env
+/.idea/
+/wp/
+!/wp/README.md

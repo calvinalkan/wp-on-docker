@@ -1,0 +1,11 @@
+#
+# =================================================================
+# Shared Make/Docker configuration
+# =================================================================
+#
+# Values defined in this file are NOT TO BE CHANGED LOCALLY.
+#
+DOCKER_REGISTRY=ghcr.io
+DOCKER_NAMESPACE=snicco
+SITE_HOST=wp-on-docker.test
+WP_CONTAINER_WP_PATH=/var/www/html
